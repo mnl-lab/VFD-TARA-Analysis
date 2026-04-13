@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attack Sequence: S2M Rotor Crash</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;800&display=swap');
+
+  :root {
+    --bg: #f9f9fb;
+    --panel: #ffffff;
+    --critical: #dc2626;
+    --high: #ea580c;
+    --warn: #ca8a04;
+    --safe: #16a34a;
+    --accent: #0284c7;
+    --cyber: #7e22ce;
+    --text: #1e293b;
+    --dim: #64748b;
+    --border: #e2e8f0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    min-height: 100vh;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Grid noise */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,184,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,184,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .container {
+    position: relative; z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 24px 40px;
+  }
+
+  .context-panel {
+    margin-bottom: 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #ffffff;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+  }
+
+  .context-block {
+    padding: 14px 16px;
+    border-right: 1px solid var(--border);
+  }
+
+  .context-block:last-child { border-right: 0; }
+
+  .context-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .context-text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  /* Header */
+  .top-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .scenario-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--critical);
+    letter-spacing: 3px;
+    margin-bottom: 6px;
+  }
+
+  .title {
+    font-size: 34px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: 0.5px;
+    line-height: 1;
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: var(--dim);
+    margin-top: 6px;
+    font-weight: 400;
+  }
+
+  .objective-box {
+    background: rgba(255,26,26,0.06);
+    border: 1px solid rgba(255,26,26,0.3);
+    border-radius: 6px;
+    padding: 14px 18px;
+    max-width: 280px;
+    text-align: right;
+  }
+
+  .objective-box .ob-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--critical);
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+
+  .objective-box .ob-text {
+    font-size: 13px;
+    color: var(--critical);
+    line-height: 1.5;
+  }
+
+  /* Timeline / swimlane layout */
+  .swimlane-header {
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 8px;
+    padding: 0 0 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sh-cell {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--dim);
+    padding: 0 8px;
+  }
+  .sh-cell.actor { color: var(--accent); }
+  .sh-cell.system { color: var(--warn); }
+  .sh-cell.physical { color: var(--critical); }
+
+  /* Steps */
+  .step-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 6px;
+    align-items: stretch;
+    opacity: 0;
+    transform: translateX(-20px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+
+  .step-row.visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .step-num {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    position: relative;
+  }
+
+  .step-circle {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+    border: 2px solid;
+  }
+
+  .step-line {
+    width: 2px;
+    flex: 1;
+    min-height: 20px;
+    margin-top: -1px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .step-line-dashed { border-left: 2px dashed; }
+
+  /* Phase colors */
+  .phase-access .step-circle { border-color: var(--cyber); background: rgba(123,47,255,0.15); color: var(--cyber); }
+  .phase-access .step-line { background: var(--cyber); opacity: 0.3; }
+
+  .phase-escalate .step-circle { border-color: var(--accent); background: rgba(0,184,255,0.12); color: var(--accent); }
+  .phase-escalate .step-line { background: var(--accent); opacity: 0.3; }
+
+  .phase-disable .step-circle { border-color: var(--high); background: rgba(255,102,0,0.12); color: var(--high); }
+  .phase-disable .step-line { background: var(--high); opacity: 0.3; }
+
+  .phase-kinetic .step-circle { border-color: var(--critical); background: rgba(255,26,26,0.15); color: var(--critical); }
+  .phase-kinetic .step-line { background: var(--critical); opacity: 0.3; }
+  .phase-kinetic .step-line-dashed { border-color: var(--critical); opacity: 0.4; }
+
+  /* Cells */
+  .cell {
+    padding: 10px 14px;
+    border-radius: 5px;
+    font-size: 13px;
+    line-height: 1.5;
+    position: relative;
+  }
+
+  .cell-empty {
+    background: transparent;
+  }
+
+  .cell-actor {
+    background: rgba(123,47,255,0.08);
+    border: 1px solid rgba(123,47,255,0.2);
+  }
+  .cell-actor-accent {
+    background: rgba(0,184,255,0.07);
+    border: 1px solid rgba(0,184,255,0.2);
+  }
+  .cell-system {
+    background: rgba(255,208,0,0.07);
+    border: 1px solid rgba(255,208,0,0.2);
+  }
+  .cell-physical {
+    background: rgba(255,26,26,0.07);
+    border: 1px solid rgba(255,26,26,0.25);
+  }
+  .cell-physical-warn {
+    background: rgba(255,102,0,0.08);
+    border: 1px solid rgba(255,102,0,0.25);
+  }
+  .cell-safe {
+    background: rgba(0,217,126,0.07);
+    border: 1px solid rgba(0,217,126,0.2);
+  }
+
+  .cell strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 3px;
+    color: var(--text);
+  }
+
+  .cell .tag {
+    display: inline-block;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    margin-bottom: 4px;
+    letter-spacing: 1px;
+  }
+
+  .tag-cyber { background: rgba(126,34,206,0.15); color: var(--cyber); }
+  .tag-ot { background: rgba(2,132,199,0.15); color: var(--accent); }
+  .tag-safety { background: rgba(220,38,38,0.15); color: var(--critical); }
+  .tag-physical { background: rgba(234,88,12,0.15); color: var(--high); }
+  .tag-bsi { background: rgba(22,163,74,0.15); color: var(--safe); }
+
+  .cell .ref {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--dim);
+    margin-top: 4px;
+    display: block;
+  }
+
+  .cell .detect {
+    margin-top: 6px;
+    display: block;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--safe);
+  }
+
+  /* Big impact section */
+  .impact-section {
+    margin-top: 24px;
+    padding: 20px 24px;
+    background: rgba(255,26,26,0.06);
+    border: 1px solid rgba(255,26,26,0.3);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .impact-section::before {
+    content: 'KINETIC IMPACT';
+    position: absolute;
+    top: 16px; right: 24px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,26,26,0.5);
+    letter-spacing: 3px;
+  }
+
+  .impact-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--critical);
+    letter-spacing: 3px;
+    margin-bottom: 12px;
+  }
+
+  .impact-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  .impact-item {
+    padding: 12px 14px;
+    background: #ffffff;
+    border-radius: 5px;
+    border-left: 3px solid;
+  }
+
+  .impact-item .ii-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--dim);
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+  }
+
+  .impact-item .ii-value {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  /* BSI mapping sidebar at the bottom */
+  .bsi-strip {
+    margin-top: 20px;
+    padding: 16px 20px;
+    background: rgba(0,217,126,0.04);
+    border: 1px solid rgba(0,217,126,0.15);
+    border-radius: 6px;
+  }
+
+  .bsi-strip-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--safe);
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+  }
+
+  .bsi-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .bsi-chip {
+    padding: 5px 10px;
+    background: rgba(0,217,126,0.07);
+    border: 1px solid rgba(0,217,126,0.2);
+    border-radius: 4px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--safe);
+    line-height: 1.4;
+  }
+
+  .mitre-map {
+    margin-top: 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .mitre-map-header {
+    padding: 10px 14px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    background: rgba(2,132,199,0.06);
+  }
+
+  .mitre-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .mitre-table th,
+  .mitre-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    text-align: left;
+  }
+
+  .mitre-table th {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 1px;
+  }
+
+  .mitre-table tr:last-child td { border-bottom: 0; }
+
+  /* Connector arrows between rows */
+  .phase-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 10px 0 6px 90px;
+    padding-left: 12px;
+  }
+
+  .phase-divider-line {
+    height: 1px;
+    flex: 1;
+    opacity: 0.3;
+  }
+
+  .phase-pill {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 2px 10px;
+    border-radius: 10px;
+    white-space: nowrap;
+    letter-spacing: 1px;
+  }
+
+  @keyframes flickerIn {
+    0% { opacity: 0; transform: translateX(-18px); }
+    100% { opacity: 1; transform: translateX(0); }
+  }
+
+  .blink {
+    animation: blink 1.2s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.3; } }
+
+  @media (max-width: 900px) {
+    .top-bar {
+      flex-direction: column;
+      gap: 14px;
+    }
+    .objective-box {
+      max-width: 100%;
+      text-align: left;
+    }
+    .context-panel {
+      grid-template-columns: 1fr;
+    }
+    .context-block {
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .context-block:last-child { border-bottom: 0; }
+    .swimlane-header,
+    .step-row {
+      grid-template-columns: 70px 1fr;
+    }
+    .swimlane-header .sh-cell:nth-child(3),
+    .swimlane-header .sh-cell:nth-child(4),
+    .step-row .cell:nth-child(3),
+    .step-row .cell:nth-child(4) {
+      grid-column: 2;
+    }
+    .phase-divider { margin-left: 70px; }
+    .impact-grid { grid-template-columns: 1fr; }
+  }
+
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="top-bar">
+    <div>
+      <div class="scenario-tag">▶ SCENARIO 2 / CYBER-PHYSICAL ATTACK</div>
+      <div class="title">S2M Magnetic Bearing<br>Rotor Crash</div>
+      <div class="subtitle">Attack sequence · VFD TARA case study · BSI TR-03183-1 alignment</div>
+    </div>
+    <div class="objective-box">
+      <div class="ob-label">ATTACKER OBJECTIVE</div>
+      <div class="ob-text">Cause immediate, unrecoverable physical destruction to a 30 MW centrifugal gas compressor via cyber access.</div>
+    </div>
+  </div>
+
+  <div class="context-panel">
+    <div class="context-block">
+      <div class="context-label">SCENARIO ASSUMPTIONS</div>
+      <div class="context-text">Remote vendor access is available, an engineering workstation can assume operational priority, and segmentation/monitoring controls are incomplete. The scenario models an adversary with OT process knowledge.</div>
+    </div>
+    <div class="context-block">
+      <div class="context-label">CRA EVIDENCE VALUE</div>
+      <div class="context-text">Each phase ties attacker behavior to explicit violated controls, detection opportunities, and ATT&amp;CK for ICS techniques. This supports compliance evidence and technical review.</div>
+    </div>
+  </div>
+
+  <!-- Swimlane headers -->
+  <div class="swimlane-header">
+    <div class="sh-cell">PHASE</div>
+    <div class="sh-cell actor">ATTACKER ACTION</div>
+    <div class="sh-cell system">OT SYSTEM RESPONSE</div>
+    <div class="sh-cell physical">PHYSICAL CONSEQUENCE</div>
+  </div>
+
+  <!-- Steps container -->
+  <div id="steps-container">
+
+    <!-- Step 1 -->
+    <div class="step-row phase-access" id="step1">
+      <div class="step-num">
+        <div class="step-circle">01</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="cell cell-actor">
+        <span class="tag tag-cyber">INITIAL ACCESS</span>
+        <strong>Supply Chain / VPN Hijack</strong>
+        Exploits weak supply chain security to gain access to vendor remote diagnostic services. Hijacks a legitimate remote support VPN session targeting the VFD control cabinet.
+        <span class="ref">▸ Implicit network trust model exploited</span>
+      </div>
+      <div class="cell cell-system">
+        <span class="tag tag-ot">OT NETWORK</span>
+        <strong>VPN authenticates normally</strong>
+        No anomaly detected — attacker appears as legitimate remote support engineer. Standard VPN grants broad network visibility across OT segments.
+        <span class="ref">▸ BSI FAIL: REQ_ER 5.1 (access control) REQ_ER 13.2 (auth logging)</span>
+        <span class="detect">DETECT: impossible travel + session fingerprint mismatch + unusual service-account behavior</span>
+      </div>
+      <div class="cell cell-empty"></div>
+    </div>
+
+    <div class="phase-divider">
+      <div class="phase-divider-line" style="background: linear-gradient(90deg, var(--cyber), var(--accent));"></div>
+      <div class="phase-pill" style="background: rgba(0,184,255,0.1); color: var(--accent); border: 1px solid rgba(0,184,255,0.2);">▼ ESCALATION PHASE</div>
+      <div class="phase-divider-line" style="background: linear-gradient(90deg, var(--accent), var(--high));"></div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-row phase-escalate" id="step2">
+      <div class="step-num">
+        <div class="step-circle">02</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="cell cell-actor-accent">
+        <span class="tag tag-ot">PRIVILEGE ESCALATION</span>
+        <strong>Engineering Workstation Priority Takeover</strong>
+        Connects to the servicing network via compromised engineering workstation instance. Issues command to take absolute priority control of the magnetic bearing cabinet (MBC) — locking out both the local HMI and PCS SCADA link.
+        <span class="ref">▸ Only one control mode can be active at a time — remote engineering channel wins priority</span>
+      </div>
+      <div class="cell cell-system">
+        <span class="tag tag-ot">VFD CONTROL CABINET</span>
+        <strong>Local HMI locked out</strong>
+        Remote engineering priority active. Local HMI panel becomes non-responsive. Process Control System (PCS/SCADA) Modbus link severed. Operators lose all local control and visibility.
+        <span class="ref">▸ BSI FAIL: REQ_ER 12.2 (permission granularity) REQ_ER 5.8 (report unauthorized access)</span>
+        <span class="detect">DETECT: control-authority change event without approved maintenance ticket</span>
+      </div>
+      <div class="cell cell-physical">
+        <span class="tag tag-safety">SAFETY IMPACT</span>
+        <strong>Operators blind</strong>
+        Control room sees no alarms. All control authority now held remotely by attacker. No local override available.
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step-row phase-disable" id="step3">
+      <div class="step-num">
+        <div class="step-circle">03</div>
+        <div class="step-line"></div>
+      </div>
+      <div class="cell cell-actor">
+        <span class="tag tag-cyber">SAFETY DISABLEMENT</span>
+        <strong>Disable AVR, ABS &amp; UPS</strong>
+        Via the engineering workstation, disables the MIMO/SISO control algorithms — specifically killing Adaptive Vibration Rejection (AVR) and Automatic Balancing System (ABS). Simultaneously accesses control cabinet power supply management to disable the UPS battery backup system.
+        <span class="ref">▸ Eliminates both the vibration safety and the controlled-rundown capability</span>
+      </div>
+      <div class="cell cell-system">
+        <span class="tag tag-safety">CONTROL CABINET / UPS MODULE</span>
+        <strong>UPS disabled; AVR/ABS off</strong>
+        Power supply module confirms UPS deactivation. AMB control module no longer executing vibration compensation. System is now in an inherently unstable state — rotor levitation maintained only by static electromagnetic field.
+        <span class="ref">▸ BSI FAIL: REQ_ER 9.3 (safety functions during network loss) REQ_ER 9.2 (resume after interruption)</span>
+        <span class="detect">DETECT: watchdog on AVR/ABS/UPS state changes with dual-approval enforcement</span>
+      </div>
+      <div class="cell cell-physical-warn">
+        <span class="tag tag-physical">PHYSICAL RISK ↑</span>
+        <strong>Controlled rundown impossible</strong>
+        Without UPS, a power-loss event cannot execute the safe electromagnetic rundown sequence. 10-minute battery buffer gone. Rotor at full speed with no vibration control.
+      </div>
+    </div>
+
+    <div class="phase-divider">
+      <div class="phase-divider-line" style="background: linear-gradient(90deg, var(--high), var(--critical));"></div>
+      <div class="phase-pill blink" style="background: rgba(255,26,26,0.1); color: var(--critical); border: 1px solid rgba(255,26,26,0.3);">▼ KINETIC FAILURE</div>
+      <div class="phase-divider-line" style="background: var(--critical); opacity: 0.4;"></div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step-row phase-kinetic" id="step4">
+      <div class="step-num">
+        <div class="step-circle">04</div>
+        <div class="step-line step-line-dashed"></div>
+      </div>
+      <div class="cell cell-actor">
+        <span class="tag tag-cyber">TRIGGER</span>
+        <strong>Drop Electromagnetic Levitation</strong>
+        Commands high-power amplifiers (300V / 30A per axis) to immediately zero the electromagnetic levitation field. The 30 MW rotor drops under gravity at full operational speed.
+        <span class="ref">▸ Amplifiers rated 300V · 30A per axis — enormous kinetic energy stored in rotor</span>
+      </div>
+      <div class="cell cell-system">
+        <span class="tag tag-safety">BACK-UP BEARINGS (BUB)</span>
+        <strong>Rotor contacts BUBs</strong>
+        Multi-ton rotor contacts dry-lubricated sintered bush back-up bearings. BUBs rated for only a small number of high-speed rundowns. No vibration control → rotor impacts at maximum eccentricity. UPS cannot supply controlled rundown current.
+        <span class="ref">▸ BUBs engineered for short-duration low-duty drops — NOT uncontrolled high-eccentricity impacts</span>
+        <span class="detect">DETECT: hard interlock trigger on levitation-current collapse and unsafe rundown profile</span>
+      </div>
+      <div class="cell cell-physical">
+        <span class="tag tag-safety">CATASTROPHIC</span>
+        <strong>Rotor crash · BUB disintegration</strong>
+        Kinetic energy exceeds thermal + mechanical tolerance of BUBs within seconds. Back-up bearings disintegrate. High-speed rotor strikes static housing. 30 MW compressor destroyed. Extreme kinetic + potential explosive hazard to facility.
+        <span class="ref">▸ Estimated cost: tens of millions USD + production halt + safety risk to personnel</span>
+      </div>
+    </div>
+
+  </div><!-- /steps-container -->
+
+  <!-- Impact summary -->
+  <div class="impact-section">
+    <div class="impact-label">IMPACT SUMMARY</div>
+    <div class="impact-grid">
+      <div class="impact-item" style="border-color: var(--critical);">
+        <div class="ii-label">PHYSICAL DAMAGE</div>
+        <div class="ii-value" style="color: var(--critical);">Total compressor destruction · Personnel safety risk · Possible explosive hazard</div>
+      </div>
+      <div class="impact-item" style="border-color: var(--high);">
+        <div class="ii-label">OPERATIONAL IMPACT</div>
+        <div class="ii-value" style="color: var(--high);">Complete production halt · Extended downtime · Supply chain disruption</div>
+      </div>
+      <div class="impact-item" style="border-color: var(--warn);">
+        <div class="ii-label">ROOT CAUSES (BSI)</div>
+        <div class="ii-value" style="color: var(--warn);">No ZTNA (REQ_ER 5.1) · No safety config lock (REQ_ER 9.1) · No UPS integrity check (REQ_ER 9.3) · No offline rundown (REQ_ER 9.4) · No auth audit trail (REQ_ER 13.2) · Weak permission granularity (REQ_ER 12.2)</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:1px;">IMPACT PRIORITY MODEL: SAFETY &gt; AVAILABILITY &gt; INTEGRITY &gt; CONFIDENTIALITY</div>
+  </div>
+
+  <!-- BSI requirements violated -->
+  <div class="bsi-strip">
+    <div class="bsi-strip-label">BSI TR-03183-1 REQUIREMENTS VIOLATED IN THIS SCENARIO</div>
+    <div class="bsi-items">
+      <div class="bsi-chip">REQ_ER 5.1<br>Access Control</div>
+      <div class="bsi-chip">REQ_ER 5.8<br>Report Unauth. Access</div>
+      <div class="bsi-chip">REQ_ER 9.1<br>Minimal Interfaces</div>
+      <div class="bsi-chip">REQ_ER 9.2<br>Resume After Interruption</div>
+      <div class="bsi-chip">REQ_ER 9.3<br>Local Safety Functions</div>
+      <div class="bsi-chip">REQ_ER 9.4<br>Offline Operation</div>
+      <div class="bsi-chip">REQ_ER 12.2<br>Permission Granularity</div>
+      <div class="bsi-chip">REQ_ER 13.2<br>Auth Logging</div>
+      <div class="bsi-chip">REQ_ER 13.5<br>Network Anomaly Monitor</div>
+      <div class="bsi-chip">REQ_VH 3.1<br>Regular Security Testing</div>
+      <div class="bsi-chip">Industry Guide<br>ZTNA Implementation</div>
+      <div class="bsi-chip">Industry Guide<br>Credential Rotation</div>
+    </div>
+  </div>
+
+  <div class="mitre-map">
+    <div class="mitre-map-header">MITRE ATT&amp;CK FOR ICS MAPPING · S2M SCENARIO</div>
+    <table class="mitre-table">
+      <thead>
+        <tr>
+          <th>STEP</th>
+          <th>TECHNIQUE</th>
+          <th>RATIONALE</th>
+          <th>DEFENSIVE PRIORITY</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>01</td>
+          <td>T0859 Valid Accounts</td>
+          <td>Compromised vendor identity establishes trusted remote session.</td>
+          <td>ZTNA with strong identity assurance and short-lived grants.</td>
+        </tr>
+        <tr>
+          <td>02</td>
+          <td>T0831 Manipulation of Control</td>
+          <td>Attacker takes operational control priority and blocks local operation.</td>
+          <td>Role-separated authorization and control-mode arbitration rules.</td>
+        </tr>
+        <tr>
+          <td>03</td>
+          <td>T0882 Loss of Safety</td>
+          <td>Safety-support mechanisms are disabled before final trigger.</td>
+          <td>Safety config lock, two-person rule, immutable audit trail.</td>
+        </tr>
+        <tr>
+          <td>04</td>
+          <td>T0831 Manipulation of Control</td>
+          <td>Actuator-level command directly drives catastrophic kinetic consequence.</td>
+          <td>Hardware interlocks and bounded command envelopes.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  // Staggered reveal of step rows
+  const rows = document.querySelectorAll('.step-row');
+  rows.forEach((row, i) => {
+    setTimeout(() => {
+      row.classList.add('visible');
+    }, 200 + i * 300);
+  });
+</script>
+</body>
+</html>
