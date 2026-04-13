@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VFD Threat-to-Component Heatmap</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+
+  :root {
+    --bg: #f9f9fb;
+    --panel: #ffffff;
+    --border: #e2e8f0;
+    --critical: #dc2626;
+    --high: #ea580c;
+    --medium: #ca8a04;
+    --low: #16a34a;
+    --accent: #0284c7;
+    --text: #1e293b;
+    --dim: #64748b;
+    --glow-critical: rgba(220,38,38,0.25);
+    --glow-high: rgba(234,88,12,0.25);
+    --glow-medium: rgba(202,138,4,0.2);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none; z-index: 9999;
+  }
+
+  header {
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 20px;
+    background: linear-gradient(90deg, #ffffff 0%, #f1f5f9 100%);
+  }
+
+  .badge {
+    background: var(--critical);
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    letter-spacing: 2px;
+    clip-path: polygon(4px 0%, 100% 0%, calc(100% - 4px) 100%, 0% 100%);
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--text);
+  }
+
+  header p {
+    font-size: 12px;
+    color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+    margin-left: auto;
+  }
+
+  .meta-bar {
+    padding: 10px 32px;
+    border-bottom: 1px solid var(--border);
+    background: #ffffff;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .filters-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 1px;
+    margin-right: 2px;
+  }
+
+  .filter-btn {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    border-radius: 14px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: 'Share Tech Mono', monospace;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .filter-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(2,132,199,0.08);
+  }
+
+  .summary-strip {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .summary-chip {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 14px;
+    padding: 4px 9px;
+    font-size: 10px;
+    color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 1fr var(--sidebar-width, 320px);
+    gap: 0;
+    height: calc(100vh - 65px);
+  }
+
+  /* ─── Architecture Canvas ─── */
+  .canvas-wrap {
+    padding: 28px;
+    overflow: auto;
+    position: relative;
+  }
+
+  .diagram {
+    position: relative;
+    width: 860px;
+    min-height: 520px;
+    margin: 0 auto;
+  }
+
+  /* Diagram title */
+  .diagram-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 2px;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  /* Dashed boundary box */
+  .boundary {
+    position: absolute;
+    border: 1.5px dashed var(--border);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.5);
+  }
+
+  .boundary-label {
+    position: absolute;
+    top: -11px; right: 12px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    background: var(--bg);
+    padding: 0 6px;
+    letter-spacing: 1px;
+  }
+
+  /* Component boxes */
+  .comp {
+    position: absolute;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 10;
+    border: 1.5px solid;
+  }
+
+  .comp:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .comp .cname {
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  .comp .csub {
+    font-size: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--dim);
+    text-align: center;
+  }
+
+  /* Threat severity overlays */
+  .comp[data-sev="CRITICAL"] {
+    border-color: var(--critical);
+    background: rgba(255,45,45,0.12);
+    box-shadow: 0 0 18px var(--glow-critical), inset 0 0 12px rgba(255,45,45,0.08);
+  }
+  .comp[data-sev="HIGH"] {
+    border-color: var(--high);
+    background: rgba(255,122,0,0.12);
+    box-shadow: 0 0 18px var(--glow-high), inset 0 0 12px rgba(255,122,0,0.08);
+  }
+  .comp[data-sev="MEDIUM"] {
+    border-color: var(--medium);
+    background: rgba(245,196,0,0.10);
+    box-shadow: 0 0 14px var(--glow-medium);
+  }
+  .comp[data-sev="LOW"] {
+    border-color: var(--low);
+    background: rgba(0,192,127,0.08);
+  }
+  .comp[data-sev="NONE"] {
+    border-color: var(--border);
+    background: var(--panel);
+  }
+
+  .comp:hover {
+    transform: scale(1.04);
+    z-index: 20;
+  }
+
+  /* Threat indicator badge on component */
+  .threat-badge {
+    position: absolute;
+    top: -10px; right: -10px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    font-weight: bold;
+    border: 1.5px solid var(--bg);
+    z-index: 15;
+  }
+
+  .threat-badge.c { background: var(--critical); color: #fff; }
+  .threat-badge.h { background: var(--high); color: #fff; }
+  .threat-badge.m { background: var(--medium); color: #000; }
+
+  /* SVG arrows */
+  .arrows-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  /* Attack path arrows (red dashed) */
+  .attack-arrow { stroke: var(--critical); stroke-width: 2; fill: none; stroke-dasharray: 6,3; animation: dashflow 1.5s linear infinite; }
+  .attack-arrow-h { stroke: var(--high); stroke-width: 2; fill: none; stroke-dasharray: 6,3; animation: dashflow 2s linear infinite; }
+  @keyframes dashflow { to { stroke-dashoffset: -18; } }
+
+  /* Normal arrows */
+  .cmd-arrow { stroke: #3a7aaa; stroke-width: 1.5; fill: none; }
+
+  /* Legend outside boundary */
+  .legend-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 7px;
+  }
+  .legend-dot {
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .legend-text { font-size: 12px; }
+  .legend-sub { font-size: 10px; font-family: 'Share Tech Mono', monospace; color: var(--dim); }
+
+  /* ─── Right Panel ─── */
+  .sidebar {
+    position: relative;
+    border-left: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .resizer {
+    position: absolute;
+    left: -2px;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: ew-resize;
+    background: transparent;
+    z-index: 100;
+    transition: background 0.2s;
+  }
+  .resizer:hover, .resizer.active {
+    background: var(--accent);
+  }
+
+  .sidebar-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 2px;
+    background: rgba(2,132,199,0.06);
+  }
+
+  .context-box {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(2,132,199,0.04);
+  }
+
+  .context-box .cb-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+  }
+
+  .context-box .cb-body {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .sidebar-content {
+    padding: 16px 18px;
+    overflow-y: auto;
+    flex: 1;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .sidebar-content.empty {
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+  }
+
+  .placeholder {
+    color: var(--dim);
+    font-size: 12px;
+    font-family: 'Share Tech Mono', monospace;
+    line-height: 1.8;
+  }
+  .placeholder::before {
+    content: '→';
+    display: block;
+    font-size: 28px;
+    margin-bottom: 12px;
+    color: var(--border);
+  }
+
+  /* Threat card in sidebar */
+  .threat-card { margin-bottom: 14px; }
+
+  .threat-card .tc-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .sev-pill {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  .sev-pill.c { background: var(--critical); color: #fff; }
+  .sev-pill.h { background: var(--high); color: #fff; }
+  .sev-pill.m { background: var(--medium); color: #000; }
+  .sev-pill.l { background: var(--low); color: #000; }
+
+  .tc-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .tc-body { font-size: 12px; line-height: 1.6; color: var(--text); }
+
+  .tc-ref {
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: rgba(0,0,0,0.04);
+    border-left: 2px solid var(--accent);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    line-height: 1.7;
+  }
+
+  .tc-threat {
+    margin-top: 8px;
+    padding: 6px 10px;
+    background: rgba(220,38,38,0.06);
+    border: 1px dashed rgba(220,38,38,0.3);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--critical);
+    line-height: 1.6;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 12px 0;
+  }
+
+  /* Legend below diagram */
+  .legend-area {
+    margin-top: 24px;
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .attack-path-legend {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .apl-line {
+    width: 30px; height: 2px;
+    border-top: 2px dashed;
+  }
+
+  /* Pulse animation on critical components */
+  @keyframes pulse-critical {
+    0%, 100% { box-shadow: 0 0 18px var(--glow-critical), inset 0 0 12px rgba(255,45,45,0.08); }
+    50% { box-shadow: 0 0 32px rgba(255,45,45,0.5), inset 0 0 20px rgba(255,45,45,0.15); }
+  }
+  .comp[data-sev="CRITICAL"] { animation: pulse-critical 2.5s ease-in-out infinite; }
+
+  @media (max-width: 1100px) {
+    .meta-bar { padding: 10px 16px; }
+    header { padding: 16px; }
+    .main { grid-template-columns: 1fr; height: auto; }
+    .sidebar {
+      border-left: none;
+      border-top: 1px solid var(--border);
+      min-height: 300px;
+    }
+    .canvas-wrap { padding: 16px; }
+    .diagram { width: 860px; }
+  }
+
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">ARTIFACT 1</div>
+  <h1>VFD Threat-to-Component Heatmap</h1>
+  <p>REFERENCE TEST ENV · BSI TR-03183-1 · Click any component for threat detail</p>
+</header>
+
+<div class="meta-bar">
+  <div class="filters" role="toolbar" aria-label="Severity filter controls">
+    <span class="filters-label">FILTER SEVERITY</span>
+    <button class="filter-btn active" data-filter="ALL" onclick="applySeverityFilter('ALL')">ALL</button>
+    <button class="filter-btn" data-filter="CRITICAL" onclick="applySeverityFilter('CRITICAL')">CRITICAL</button>
+    <button class="filter-btn" data-filter="HIGH" onclick="applySeverityFilter('HIGH')">HIGH</button>
+    <button class="filter-btn" data-filter="MEDIUM" onclick="applySeverityFilter('MEDIUM')">MEDIUM</button>
+    <button class="filter-btn" data-filter="LOW" onclick="applySeverityFilter('LOW')">LOW/NONE</button>
+  </div>
+  <div class="summary-strip" id="summary-strip"></div>
+</div>
+
+<div class="main">
+  <div class="canvas-wrap">
+
+    <div class="diagram-label">VFD — REFERENCE TEST ENVIRONMENT · THREAT OVERLAY</div>
+
+    <div class="diagram" id="diagram">
+
+      <!-- Boundary box: VFD reference system -->
+      <div class="boundary" style="left:140px;top:50px;width:650px;height:330px;">
+        <span class="boundary-label">VFD — REFERENCE TEST ENVIRONMENT</span>
+      </div>
+
+      <!-- COMMS INTERFACES (Attack Surface) — CRITICAL -->
+      <div class="comp" data-id="comms" data-sev="CRITICAL"
+           style="left:290px;top:0px;width:200px;height:60px;"
+         onclick="showDetail('comms')" tabindex="0" role="button" aria-label="Comms Interfaces, critical risk"
+         onkeydown="onCompKey(event, 'comms')">
+        <div class="threat-badge c">3</div>
+        <span class="cname">Comms Interfaces</span>
+        <span class="csub">Modbus · Ethernet · USB · HMI · I/O</span>
+      </div>
+
+      <!-- CONTROL BOARD — CRITICAL -->
+      <div class="comp" data-id="control" data-sev="CRITICAL"
+           style="left:155px;top:120px;width:165px;height:75px;"
+         onclick="showDetail('control')" tabindex="0" role="button" aria-label="Control Board, critical risk"
+         onkeydown="onCompKey(event, 'control')">
+        <div class="threat-badge c">2</div>
+        <span class="cname">Control Board</span>
+        <span class="csub">Firmware + DSP</span>
+        <span class="csub">NXP i.MX</span>
+      </div>
+
+      <!-- PWM CALCULATOR — HIGH -->
+      <div class="comp" data-id="pwm" data-sev="HIGH"
+           style="left:355px;top:120px;width:160px;height:75px;"
+         onclick="showDetail('pwm')" tabindex="0" role="button" aria-label="PWM Calculator, high risk"
+         onkeydown="onCompKey(event, 'pwm')">
+        <div class="threat-badge h">1</div>
+        <span class="cname">PWM Calculator</span>
+        <span class="csub">Switch Patterns</span>
+      </div>
+
+      <!-- GATE DRIVERS — HIGH -->
+      <div class="comp" data-id="gates" data-sev="HIGH"
+           style="left:555px;top:120px;width:155px;height:75px;"
+         onclick="showDetail('gates')" tabindex="0" role="button" aria-label="Gate Drivers, high risk"
+         onkeydown="onCompKey(event, 'gates')">
+        <div class="threat-badge h">1</div>
+        <span class="cname">Gate Drivers</span>
+        <span class="csub">Amplify PWM</span>
+      </div>
+
+      <!-- AC INPUT — NONE -->
+      <div class="comp" data-id="acinput" data-sev="NONE"
+           style="left:18px;top:245px;width:110px;height:65px;"
+         onclick="showDetail('acinput')" tabindex="0" role="button" aria-label="AC Input, no direct cyber risk"
+         onkeydown="onCompKey(event, 'acinput')">
+        <span class="cname">AC Input</span>
+        <span class="csub">3-Phase</span>
+      </div>
+
+      <!-- RECTIFIER — LOW -->
+      <div class="comp" data-id="rect" data-sev="LOW"
+           style="left:150px;top:245px;width:120px;height:65px;"
+         onclick="showDetail('rect')" tabindex="0" role="button" aria-label="Rectifier, low risk"
+         onkeydown="onCompKey(event, 'rect')">
+        <span class="cname">Rectifier</span>
+        <span class="csub">AC → DC</span>
+      </div>
+
+      <!-- DC BUS — LOW -->
+      <div class="comp" data-id="dcbus" data-sev="LOW"
+           style="left:310px;top:245px;width:120px;height:65px;"
+         onclick="showDetail('dcbus')" tabindex="0" role="button" aria-label="DC Bus, low risk"
+         onkeydown="onCompKey(event, 'dcbus')">
+        <span class="cname">DC Bus</span>
+        <span class="csub">Smoothed DC</span>
+      </div>
+
+      <!-- IGBT INVERTER — CRITICAL -->
+      <div class="comp" data-id="igbt" data-sev="CRITICAL"
+           style="left:470px;top:230px;width:140px;height:95px;"
+         onclick="showDetail('igbt')" tabindex="0" role="button" aria-label="IGBT Inverter, critical risk"
+         onkeydown="onCompKey(event, 'igbt')">
+        <div class="threat-badge c">2</div>
+        <span class="cname">IGBT Inverter</span>
+        <span class="csub">Power Actuation</span>
+        <span class="csub">Gate Drive Target</span>
+      </div>
+
+      <!-- STO — MEDIUM -->
+      <div class="comp" data-id="sto" data-sev="CRITICAL"
+           style="left:470px;top:365px;width:140px;height:65px;"
+         onclick="showDetail('sto')" tabindex="0" role="button" aria-label="STO safety layer, medium risk"
+         onkeydown="onCompKey(event, 'sto')">
+        <div class="threat-badge c">1</div>
+        <span class="cname">STO (×10)</span>
+        <span class="csub">Safe Torque Off · Safety</span>
+      </div>
+
+      <!-- MOTOR — NONE -->
+      <div class="comp" data-id="motor" data-sev="NONE"
+           style="left:650px;top:245px;width:130px;height:65px;"
+         onclick="showDetail('motor')" tabindex="0" role="button" aria-label="Motor, consequence target"
+         onkeydown="onCompKey(event, 'motor')">
+        <span class="cname">Motor</span>
+        <span class="csub">AC Induction</span>
+      </div>
+
+      <!-- SVG ARROWS -->
+      <svg class="arrows-svg" viewBox="0 0 860 480" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3a7aaa"/>
+          </marker>
+          <marker id="arrowRed" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ff2d2d"/>
+          </marker>
+          <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#ff7a00"/>
+          </marker>
+        </defs>
+
+        <!-- Normal command chain arrows -->
+        <line x1="320" y1="60" x2="237" y2="120" class="cmd-arrow" marker-end="url(#arrowBlue)"/>
+        <line x1="320" y1="120" x2="355" y2="120" class="cmd-arrow" marker-end="url(#arrowBlue)" transform="translate(0,37)"/>
+        <line x1="515" y1="157" x2="555" y2="157" class="cmd-arrow" marker-end="url(#arrowBlue)"/>
+        <line x1="710" y1="157" x2="540" y2="260" class="cmd-arrow" marker-end="url(#arrowBlue)" transform="translate(-100,17)"/>
+        <line x1="128" y1="277" x2="150" y2="277" class="cmd-arrow" marker-end="url(#arrowBlue)"/>
+        <line x1="270" y1="277" x2="310" y2="277" class="cmd-arrow" marker-end="url(#arrowBlue)"/>
+        <line x1="430" y1="277" x2="470" y2="277" class="cmd-arrow" marker-end="url(#arrowBlue)"/>
+        <line x1="610" y1="277" x2="650" y2="277" class="cmd-arrow" marker-end="url(#arrowBlue)"/>
+
+        <!-- Attack path: Comms → Control Board (Modbus Injection) -->
+        <path d="M 340 60 C 280 90, 250 95, 237 120" class="attack-arrow" marker-end="url(#arrowRed)"/>
+        <!-- Text label on attack path -->
+        <text x="248" y="88" font-family="Share Tech Mono, monospace" font-size="9" fill="#ff2d2d" transform="rotate(-30 248 88)">MODBUS INJ.</text>
+
+        <!-- Attack path: Control Board → IGBT (via command chain compromise) -->
+        <path d="M 320 157 Q 400 130, 470 260" class="attack-arrow" marker-end="url(#arrowRed)"/>
+        <text x="375" y="185" font-family="Share Tech Mono, monospace" font-size="9" fill="#ff2d2d">FIRMWARE EXPLOIT</text>
+
+        <!-- Attack path: Comms → IGBT direct (freq manipulation) -->
+        <path d="M 440 30 C 560 30, 600 160, 540 235" class="attack-arrow" marker-end="url(#arrowRed)"/>
+        <text x="555" y="80" font-family="Share Tech Mono, monospace" font-size="9" fill="#ff2d2d" transform="rotate(70 555 80)">FREQ. MANIP.</text>
+
+        <!-- Attack path: STO bypass (orange) -->
+        <path d="M 450 165 C 430 260, 450 340, 470 395" class="attack-arrow-h" marker-end="url(#arrowOrange)"/>
+        <text x="400" y="305" font-family="Share Tech Mono, monospace" font-size="9" fill="#ff7a00">STO BYPASS</text>
+
+      </svg>
+
+    </div><!-- /diagram -->
+
+    <!-- Legend -->
+    <div class="legend-area">
+      <div>
+        <div style="font-size:10px;font-family:'Share Tech Mono',monospace;color:var(--dim);margin-bottom:8px;letter-spacing:1px;">THREAT SEVERITY</div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--critical);box-shadow:0 0 6px var(--critical);"></div><span class="legend-text">CRITICAL</span><span class="legend-sub" style="margin-left:4px;">— immediate safety risk</span></div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--high);"></div><span class="legend-text">HIGH</span><span class="legend-sub" style="margin-left:4px;">— significant exploit path</span></div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--medium);"></div><span class="legend-text">MEDIUM</span><span class="legend-sub" style="margin-left:4px;">— conditional risk</span></div>
+        <div class="legend-row"><div class="legend-dot" style="background:var(--low);"></div><span class="legend-text">LOW / NONE</span></div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-family:'Share Tech Mono',monospace;color:var(--dim);margin-bottom:8px;letter-spacing:1px;">ATTACK PATHS</div>
+        <div class="attack-path-legend"><div class="apl-line" style="border-color:var(--critical);"></div>CRITICAL ATTACK VECTOR</div>
+        <div class="attack-path-legend" style="margin-top:6px;"><div class="apl-line" style="border-color:var(--high);"></div>HIGH ATTACK VECTOR</div>
+        <div class="attack-path-legend" style="margin-top:6px;"><div class="apl-line" style="border-color:#3a7aaa;border-style:solid;"></div>COMMAND CHAIN (NORMAL)</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-family:'Share Tech Mono',monospace;color:var(--dim);margin-bottom:8px;letter-spacing:1px;">BADGE = THREAT COUNT</div>
+        <div style="font-size:11px;color:var(--dim);">Numbers on components indicate<br>number of active threat scenarios<br>targeting that component.</div>
+      </div>
+    </div>
+
+  </div><!-- /canvas-wrap -->
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="resizer" id="resizer"></div>
+    <div class="sidebar-header">THREAT DETAIL · SELECT COMPONENT</div>
+    <div class="sidebar-content empty" id="sidebar-content">
+      <div>
+        <div class="context-box">
+          <div class="cb-label">ANALYSIS CONTEXT</div>
+          <div class="cb-body">Severity reflects exploitability + kinetic impact in a representative VFD test environment. ATT&amp;CK for ICS mappings and BSI TR-03183-1 obligations are shown per component to support CRA evidence preparation.</div>
+        </div>
+        <div class="placeholder">Click any component<br>to view threat analysis,<br>MITRE ATT&amp;CK for ICS,<br>BSI requirements &amp;<br>mitigation references</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+const DETAILS = {
+  comms: {
+    name: "Comms Interfaces",
+    sev: "CRITICAL", sevClass: "c",
+    body: "The primary attack surface of the VFD. Modbus RTU/TCP has no native authentication, authorization, or encryption. Any node on the network can write to holding registers, enabling command injection, DoS, and replay attacks. USB provides direct firmware access.",
+    threats: [
+      "Modbus command injection through unauthenticated write requests (Likelihood: High / Feasibility: High)",
+      "Denial of service via Modbus/Ethernet flooding causing controller starvation (High/High)",
+      "Replay of valid command frames where anti-replay controls are absent (Medium/Medium)",
+      "Credential abuse through weak/default service accounts (Medium/Medium)"
+    ],
+    mitre: ["T0859 Valid Accounts", "T0814 Denial of Service", "T0831 Manipulation of Control"],
+    refs: [
+      "BSI REQ_ER 5.1 — Access control mechanisms (MUST)",
+      "BSI REQ_ER 5.2 — No default passwords (MUST)",
+      "BSI REQ_ER 6.1 — Best-practice crypto for network comms (MUST)",
+      "BSI REQ_ER 9.2 — Resume operation after DoS interruption (MUST)",
+      "BSI REQ_ER 11.1 — Deactivate unused interfaces (MUST)",
+      "BSI REQ_ER 13.5 — Monitor network anomalies (MUST)",
+      "Industry Guide — Isolate Modbus to non-routable OT subnet; deploy ZTNA",
+      "CRA alignment — Annex I(1)(c),(d): prevent unauthorized access and protect confidentiality/integrity"
+    ]
+  },
+  control: {
+    name: "Control Board (Firmware + DSP)",
+    sev: "CRITICAL", sevClass: "c",
+    body: "Houses the NXP i.MX microprocessor which contains a critical HAB (High Assurance Boot) vulnerability. The bootrom divides the data_count size by 8, authenticating only a fraction of memory — enabling an attacker to append malicious code that survives reboots and firmware flashes.",
+    threats: [
+      "NXP i.MX HAB bypass enabling persistent boot-chain compromise (Critical)",
+      "Firmware tampering with privileged engineering access (Low likelihood, high impact)"
+    ],
+    mitre: ["T0851 Rootkit", "T0803 Block Command Message", "T0891 Theft of Operational Information"],
+    refs: [
+      "BSI REQ_ER 2.2 — Fix known actively exploited vulnerabilities before deployment (MUST)",
+      "BSI REQ_ER 4.2 — Secure update mechanism with integrity/authenticity check (MUST)",
+      "BSI REQ_ER 7.1 — Verify own integrity (SHOULD); warn on failure",
+      "BSI REQ_ER 3.2 — No hard-coded security data in firmware (MUST)",
+      "BSI REQ_VH 1.1 — SBOM must document NXP i.MX component",
+      "Industry Guide — Coordinate with silicon vendor to patch HAB data_count parsing; enforce TLS 1.3 on firmware baseline v8.0+",
+      "CRA alignment — Annex I(1)(b),(f): vulnerability handling and secure update integrity"
+    ]
+  },
+  pwm: {
+    name: "PWM Calculator",
+    sev: "HIGH", sevClass: "h",
+    body: "Receives switch patterns from the Control Board. If the control board is compromised, malicious switching frequencies can be injected, generating severe harmonic distortion and overvoltage conditions that degrade motor bearings through electrical discharge machining (EDM).",
+    threats: [
+      "Indirect malicious frequency profile injection through compromised control logic (High impact)"
+    ],
+    mitre: ["T0831 Manipulation of Control"],
+    refs: [
+      "BSI REQ_ER 12.1 — Least privilege operation by default (MUST)",
+      "BSI REQ_ER 12.2 — Granular permission system for interfaces (MUST)",
+      "BSI REQ_ER 9.1 — Only activate interfaces necessary for core function (MUST)"
+    ]
+  },
+  gates: {
+    name: "Gate Drivers",
+    sev: "HIGH", sevClass: "h",
+    body: "Amplifies PWM signals to drive the IGBT switches. Downstream from the attack chain — if upstream components are compromised, abnormal gate drive signals reach the IGBT inverter. No direct network interface reduces direct attack surface.",
+    threats: [
+      "Downstream propagation of malicious drive waveforms from upstream compromise"
+    ],
+    mitre: ["T0831 Manipulation of Control"],
+    refs: [
+      "BSI REQ_ER 9.3 — Maintain safety functions during network loss (MUST)",
+      "BSI REQ_ER 12.1 — Least privilege (MUST)"
+    ]
+  },
+  igbt: {
+    name: "IGBT Inverter",
+    sev: "CRITICAL", sevClass: "c",
+    body: "The physical power actuation stage. Malicious switching commands here directly cause dangerous overvoltage impulses, shaft voltage generation, and electrical erosion of motor bearings (EDM/fluting). This is where cyber attacks become kinetic physical damage.",
+    threats: [
+      "Frequency manipulation causing EDM bearing degradation and accelerated failure",
+      "Overvoltage generation exceeding insulation and bearing protection limits"
+    ],
+    mitre: ["T0831 Manipulation of Control", "T0882 Loss of Safety"],
+    refs: [
+      "BSI REQ_ER 9.3 — Maintain local safety function during network loss (MUST)",
+      "BSI REQ_ER 12.2 — Permission system for control interfaces (MUST)",
+      "Industry Guide — Physical separation of power stage; hardware-enforced frequency limits",
+      "CRA alignment — Annex I(1)(a),(c): minimize exploit impact and enforce secure-by-default behavior"
+    ]
+  },
+  sto: {
+    name: "STO — Safe Torque Off",
+    sev: "CRITICAL", sevClass: "c",
+    body: "Safety-critical hardware function. Bypassing STO requires deep knowledge of hardware wiring or firmware internals — a highly specialized attack. However, compromise eliminates the last line of physical safety protection for the motor.",
+    threats: [
+      "Safety function bypass through hardware manipulation or debug-path abuse (low likelihood, catastrophic impact)"
+    ],
+    mitre: ["T0882 Loss of Safety", "T0804 Block Reporting Message"],
+    refs: [
+      "BSI REQ_ER 9.3 — Maintain local safety functions even during network loss (MUST)",
+      "BSI REQ_ER 11.2 — Debug interfaces must be disabled by default (MUST)",
+      "IEC 62443-4-2: CR 3.6 — Protection against software failure"
+    ]
+  },
+  acinput: {
+    name: "AC Input",
+    sev: "NONE", sevClass: "",
+    body: "3-phase AC power input. No digital interface; purely electrical. Not a cybersecurity attack surface in the VFD context.",
+    threats: [],
+    refs: ["No direct cybersecurity threat — physical/electrical hardening applies"]
+  },
+  rect: {
+    name: "Rectifier",
+    sev: "LOW", sevClass: "l",
+    body: "Converts AC to DC. No digital control interface in standard VFDs. Indirect risk from upstream compromise causing abnormal DC bus voltage.",
+    threats: ["Indirect electrical stress from upstream command manipulation"],
+    mitre: ["T0831 Manipulation of Control"],
+    refs: ["BSI REQ_ER 9.2 — Resume operation after interruption (MUST)"]
+  },
+  dcbus: {
+    name: "DC Bus",
+    sev: "LOW", sevClass: "l",
+    body: "Smoothed DC intermediate stage. No direct cyber attack surface. Voltage anomalies from PWM manipulation can propagate here but are caused upstream.",
+    threats: ["Indirect abnormal voltage propagation from compromised upstream logic"],
+    mitre: ["T0831 Manipulation of Control"],
+    refs: ["Physical monitoring; no specific BSI requirement applies here directly"]
+  },
+  motor: {
+    name: "Motor (AC Induction)",
+    sev: "NONE", sevClass: "",
+    body: "The physical load — an AC induction motor. The ultimate target of kinetic attacks via the VFD command chain. No digital interface; damage is induced through electrical signals.",
+    threats: ["Physical damage endpoint: bearing destruction via VFD-induced EDM (consequence, not direct cyber surface)"],
+    mitre: ["T0882 Loss of Safety"],
+    refs: ["Industry bearing protection: insulated or hybrid bearings as physical mitigation"]
+  }
+};
+
+function showDetail(id) {
+  const d = DETAILS[id];
+  if (!d) return;
+
+  const sc = document.getElementById('sidebar-content');
+  sc.classList.remove('empty');
+
+  let threatHtml = '';
+  if (d.threats.length > 0) {
+    threatHtml = `<div class="tc-threat">${d.threats.map(t => `<div style="margin-bottom:4px;">${t}</div>`).join('')}</div>`;
+  }
+
+  const mitreHtml = (d.mitre && d.mitre.length > 0)
+    ? `<div style="margin-top:8px;font-size:11px;"><span style="font-family:'Share Tech Mono',monospace;color:var(--dim);font-size:10px;">ATT&CK ICS</span><div style="margin-top:4px;">${d.mitre.map(m => `<span style="display:inline-block;margin:0 6px 6px 0;padding:2px 7px;border:1px solid var(--border);border-radius:10px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text);">${m}</span>`).join('')}</div></div>`
+    : '';
+
+  let refHtml = d.refs.map(r => `<div style="margin-bottom:3px;">▸ ${r}</div>`).join('');
+
+  sc.innerHTML = `
+    <div class="threat-card">
+      <div class="tc-header">
+        <span class="sev-pill ${d.sevClass}">${d.sev}</span>
+        <span class="tc-name">${d.name}</span>
+      </div>
+      <div class="tc-body">${d.body}</div>
+      ${threatHtml}
+      ${mitreHtml}
+      <div class="divider"></div>
+      <div style="font-size:10px;font-family:'Share Tech Mono',monospace;color:var(--dim);letter-spacing:1px;margin-bottom:6px;">REQUIREMENTS & MITIGATIONS</div>
+      <div class="tc-ref">${refHtml}</div>
+    </div>
+  `;
+}
+
+function onCompKey(event, id) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    showDetail(id);
+  }
+}
+
+function applySeverityFilter(sev) {
+  const comps = document.querySelectorAll('.comp');
+  comps.forEach((c) => {
+    const cSev = c.dataset.sev;
+    const visible = sev === 'ALL' || cSev === sev || (sev === 'LOW' && (cSev === 'LOW' || cSev === 'NONE'));
+    c.style.opacity = visible ? '1' : '0.2';
+    c.style.pointerEvents = visible ? 'auto' : 'none';
+  });
+  document.querySelectorAll('.filter-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.filter === sev);
+  });
+}
+
+function renderSummary() {
+  const sevCounts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, NONE: 0 };
+  document.querySelectorAll('.comp').forEach((c) => {
+    sevCounts[c.dataset.sev] = (sevCounts[c.dataset.sev] || 0) + 1;
+  });
+  document.getElementById('summary-strip').innerHTML = `
+    <span class="summary-chip">UPDATED 2026-04-13</span>
+    <span class="summary-chip">PRIORITY SAFETY &gt; AVAILABILITY &gt; INTEGRITY &gt; CONFIDENTIALITY</span>
+    <span class="summary-chip">CRITICAL ${sevCounts.CRITICAL}</span>
+    <span class="summary-chip">HIGH ${sevCounts.HIGH}</span>
+    <span class="summary-chip">MEDIUM ${sevCounts.MEDIUM}</span>
+    <span class="summary-chip">LOW/NONE ${sevCounts.LOW + sevCounts.NONE}</span>
+  `;
+}
+
+renderSummary();
+
+// Sidebar resizing
+const resizer = document.getElementById('resizer');
+let isResizing = false;
+resizer.addEventListener('mousedown', (e) => {
+  isResizing = true;
+  resizer.classList.add('active');
+  document.body.style.cursor = 'ew-resize';
+  // Prevent text selection while dragging
+  e.preventDefault();
+});
+document.addEventListener('mousemove', (e) => {
+  if (!isResizing) return;
+  let w = document.body.clientWidth - e.clientX;
+  if(w < 200) w = 200;
+  if(w > 800) w = 800;
+  document.documentElement.style.setProperty('--sidebar-width', `${w}px`);
+});
+document.addEventListener('mouseup', () => {
+  if (isResizing) {
+    isResizing = false;
+    resizer.classList.remove('active');
+    document.body.style.cursor = '';
+  }
+});
+</script>
+</body>
+</html>
