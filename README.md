@@ -128,3 +128,5 @@ This is a semester project repository. Contributions, feedback, and corrections 
 ---
 
 **Last Updated**: April 2026
+
+Commit signing enabled.
